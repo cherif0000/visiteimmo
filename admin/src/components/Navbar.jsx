@@ -1,18 +1,17 @@
-// ─── Navbar.jsx ──────────────────────────────────────────
 import { UserButton } from "@clerk/clerk-react";
 import { matchPath, useLocation } from "react-router";
 import {
   HomeIcon, BuildingIcon, ClipboardListIcon, UsersIcon,
-  HandshakeIcon, CoinsIcon, PanelLeftIcon,
+  UserIcon, CoinsIcon, PanelLeftIcon, MessageSquareIcon,
 } from "lucide-react";
 
 export const NAVIGATION = [
-  { name: "Dashboard",    path: "/dashboard",    icon: <HomeIcon className="size-5" /> },
-  { name: "Biens",        path: "/biens",         icon: <BuildingIcon className="size-5" /> },
-  { name: "Demandes",     path: "/demandes",      icon: <ClipboardListIcon className="size-5" /> },
-  { name: "Courtiers",    path: "/courtiers",     icon: <HandshakeIcon className="size-5" /> },
-  { name: "Commissions",  path: "/commissions",   icon: <CoinsIcon className="size-5" /> },
-  { name: "Clients",      path: "/clients",       icon: <UsersIcon className="size-5" /> },
+  { name: "Dashboard",   path: "/dashboard",   icon: <HomeIcon className="size-5" /> },
+  { name: "Biens",       path: "/biens",        icon: <BuildingIcon className="size-5" /> },
+  { name: "Messages",    path: "/demandes",     icon: <MessageSquareIcon className="size-5" /> },
+  { name: "Bailleurs",   path: "/bailleurs",    icon: <UserIcon className="size-5" /> },
+  { name: "Commissions", path: "/commissions",  icon: <CoinsIcon className="size-5" /> },
+  { name: "Clients",     path: "/clients",      icon: <UsersIcon className="size-5" /> },
 ];
 
 export function Navbar() {

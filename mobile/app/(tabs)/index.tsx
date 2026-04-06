@@ -1,17 +1,19 @@
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
-  FlatList, ActivityIndicator, Image,
+  ActivityIndicator, Image,
 } from "react-native";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import SafeScreen from "@/components/SafeScreen";
 import useBiens from "@/hooks/useBiens";
+import { userApi } from "@/lib/api";
+import { useUser } from "@clerk/clerk-expo";
 
 const GOLD = "#D4A843";
 const NAVY = "#0F2236";
 
-// ── Filtres disponibles ───────────────────────────────────
 const TYPES = [
   { key: "", label: "Tous" },
   { key: "appartement", label: "Appartements" },
@@ -39,7 +41,13 @@ function formatPrix(prix: number) {
 }
 
 // ── Carte bien ────────────────────────────────────────────
-function BienCard({ bien }: { bien: any }) {
+function BienCard({ bien, favorisIds, onToggleFavori }: {
+  bien: any;
+  favorisIds: string[];
+  onToggleFavori: (id: string) => void;
+}) {
+  const isFavori = favorisIds.includes(bien._id);
+
   return (
     <TouchableOpacity
       className="bg-surface rounded-2xl mb-4 overflow-hidden"
@@ -56,6 +64,7 @@ function BienCard({ bien }: { bien: any }) {
             <Ionicons name="image-outline" size={40} color="#4A6580" />
           </View>
         )}
+
         {/* Statut badge */}
         <View
           className="absolute top-3 left-3 px-2 py-1 rounded-full"
@@ -63,16 +72,31 @@ function BienCard({ bien }: { bien: any }) {
         >
           <Text className="text-white text-xs font-bold">{STATUT_LABELS[bien.statut]}</Text>
         </View>
+
+        {/* Bouton favori */}
+        <TouchableOpacity
+          className="absolute top-3 right-3 w-9 h-9 rounded-full items-center justify-center"
+          style={{ backgroundColor: "rgba(0,0,0,0.45)" }}
+          onPress={(e) => { e.stopPropagation(); onToggleFavori(bien._id); }}
+        >
+          <Ionicons
+            name={isFavori ? "heart" : "heart-outline"}
+            size={18}
+            color={isFavori ? "#EF4444" : "#fff"}
+          />
+        </TouchableOpacity>
+
         {/* Vérifié badge */}
         {bien.verifie && (
-          <View className="absolute top-3 right-3 bg-amber-500 px-2 py-1 rounded-full flex-row items-center gap-1">
+          <View className="absolute bottom-3 left-3 bg-amber-500 px-2 py-1 rounded-full flex-row items-center gap-1">
             <Ionicons name="shield-checkmark" size={11} color="#fff" />
             <Text className="text-white text-xs font-bold">Vérifié</Text>
           </View>
         )}
+
         {/* En vedette */}
         {bien.enVedette && (
-          <View className="absolute bottom-3 left-3 bg-yellow-500 px-2 py-1 rounded-full">
+          <View className="absolute bottom-3 right-3 bg-yellow-500 px-2 py-1 rounded-full">
             <Text className="text-xs font-bold text-black">⭐ Vedette</Text>
           </View>
         )}
@@ -86,7 +110,10 @@ function BienCard({ bien }: { bien: any }) {
           <Text className="text-text-secondary text-sm ml-1">{bien.quartier}, {bien.ville}</Text>
         </View>
         <View className="flex-row items-center justify-between">
-          <Text className="text-amber-400 text-lg font-bold">{formatPrix(bien.prix)}<Text className="text-text-secondary text-xs font-normal"> /mois</Text></Text>
+          <Text className="text-amber-400 text-lg font-bold">
+            {formatPrix(bien.prix)}
+            <Text className="text-text-secondary text-xs font-normal"> /mois</Text>
+          </Text>
           <View className="flex-row gap-3">
             <View className="flex-row items-center gap-1">
               <Ionicons name="bed-outline" size={14} color="#8DA3B5" />
@@ -106,17 +133,34 @@ function BienCard({ bien }: { bien: any }) {
 
 // ── Page principale ───────────────────────────────────────
 export default function HomeScreen() {
+  const { user } = useUser();
   const [search, setSearch] = useState("");
   const [selectedType, setSelectedType] = useState("");
   const [selectedQuartier, setSelectedQuartier] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [prixMax, setPrixMax] = useState("");
+  const qc = useQueryClient();
 
   const { data, isLoading, isError } = useBiens({
     type: selectedType || undefined,
     quartier: selectedQuartier || undefined,
     prixMax: prixMax ? Number(prixMax) : undefined,
     search: search || undefined,
+  });
+
+  // Charger les favoris du user
+  const { data: favorisData } = useQuery({
+    queryKey: ["favoris"],
+    queryFn: userApi.getFavoris,
+    enabled: !!user,
+  });
+  const favorisIds: string[] = (favorisData?.favoris ?? []).map((b: any) =>
+    typeof b === "string" ? b : b._id
+  );
+
+  const toggleMut = useMutation({
+    mutationFn: (bienId: string) => userApi.toggleFavori(bienId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["favoris"] }),
   });
 
   const biens = data?.biens ?? [];
@@ -168,15 +212,18 @@ export default function HomeScreen() {
             <View className="bg-surface rounded-2xl p-4 mb-2">
               <Text className="text-text-primary font-semibold mb-3">Filtres</Text>
 
-              {/* Quartier */}
               <Text className="text-text-secondary text-xs mb-2">Quartier</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} className="mb-3">
                 {["", ...QUARTIERS].map((q) => (
                   <TouchableOpacity
                     key={q}
                     onPress={() => setSelectedQuartier(q)}
-                    className={`mr-2 px-3 py-1.5 rounded-full ${selectedQuartier === q ? "bg-amber-500" : "bg-surface/50"}`}
-                    style={{ borderWidth: 1, borderColor: selectedQuartier === q ? GOLD : "#1A3C5E" }}
+                    className={`mr-2 px-3 py-1.5 rounded-full`}
+                    style={{
+                      borderWidth: 1,
+                      borderColor: selectedQuartier === q ? GOLD : "#1A3C5E",
+                      backgroundColor: selectedQuartier === q ? GOLD : "transparent",
+                    }}
                   >
                     <Text className={`text-xs font-semibold ${selectedQuartier === q ? "text-white" : "text-text-secondary"}`}>
                       {q === "" ? "Tous" : q}
@@ -185,7 +232,6 @@ export default function HomeScreen() {
                 ))}
               </ScrollView>
 
-              {/* Prix max */}
               <Text className="text-text-secondary text-xs mb-2">Prix maximum (FCFA)</Text>
               <TextInput
                 className="bg-background rounded-xl px-4 py-2 text-text-primary text-sm"
@@ -204,7 +250,7 @@ export default function HomeScreen() {
               <TouchableOpacity
                 key={t.key}
                 onPress={() => setSelectedType(t.key)}
-                className={`mr-3 px-4 py-2 rounded-full ${selectedType === t.key ? "" : ""}`}
+                className="mr-3 px-4 py-2 rounded-full"
                 style={{ backgroundColor: selectedType === t.key ? GOLD : "#1A3C5E40" }}
               >
                 <Text
@@ -242,7 +288,14 @@ export default function HomeScreen() {
               </Text>
             </View>
           ) : (
-            biens.map((b: any) => <BienCard key={b._id} bien={b} />)
+            biens.map((b: any) => (
+              <BienCard
+                key={b._id}
+                bien={b}
+                favorisIds={favorisIds}
+                onToggleFavori={(id) => toggleMut.mutate(id)}
+              />
+            ))
           )}
         </View>
       </ScrollView>

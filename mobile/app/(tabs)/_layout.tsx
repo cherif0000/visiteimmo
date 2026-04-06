@@ -24,12 +24,12 @@ export default function TabsLayout() {
           position: "absolute",
           backgroundColor: "transparent",
           borderTopWidth: 0,
-          height: 52 + insets.bottom,
+          height: 56 + insets.bottom,
           overflow: "hidden",
         },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: "600" },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "600", marginBottom: 4 },
         tabBarBackground: () => (
-          <BlurView tint="dark" intensity={85} style={StyleSheet.absoluteFill} />
+          <BlurView tint="dark" intensity={90} style={StyleSheet.absoluteFill} />
         ),
         headerShown: false,
       }}
@@ -37,29 +37,37 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: "Recherche",
-          tabBarIcon: ({ color, size }) => <Ionicons name="search" size={size} color={color} />,
+          title: "Rechercher",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="search" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="favoris"
         options={{
-          title: "Favoris",
-          tabBarIcon: ({ color, size }) => <Ionicons name="heart" size={size} color={color} />,
+          title: "Sauvegardées",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="heart" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="demandes"
         options={{
-          title: "Mes demandes",
-          tabBarIcon: ({ color, size }) => <Ionicons name="document-text" size={size} color={color} />,
+          title: "Messages",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="chatbubble-ellipses" size={size} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profil",
-          tabBarIcon: ({ color, size }) => <Ionicons name="person" size={size} color={color} />,
+          title: "Menu",
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="person-circle" size={size} color={color} />
+          ),
         }}
       />
     </Tabs>

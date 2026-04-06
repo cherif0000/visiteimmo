@@ -59,6 +59,9 @@ export const createDemande = async (req, res) => {
   try {
     const { bienId, nom, telephone, email, typeDemande, datePreferee, message } = req.body;
 
+    // Récupérer le clerkId si l'utilisateur est connecté
+    const clerkId = req.auth?.userId ?? null;
+
     const bien = await Bien.findById(bienId);
     if (!bien) return res.status(404).json({ message: "Bien non trouvé" });
     if (bien.statut === "loue") {
@@ -77,8 +80,7 @@ export const createDemande = async (req, res) => {
 
     const demande = new Demande({
       bien: bienId,
-     client: { nom, telephone, email: email || "" },
-
+      client: { nom, telephone, email: email || "", clerkId },
       typeDemande: typeDemande || "visite",
       datePreferee: datePreferee ? new Date(datePreferee) : null,
       message: message || "",
@@ -95,7 +97,22 @@ export const createDemande = async (req, res) => {
   }
 };
 
-// ── Favoris utilisateur ──────────────────────────────────
+// ── Favoris : récupérer la liste ─────────────────────────
+export const getFavoris = async (req, res) => {
+  try {
+    const clerkId = req.auth.userId;
+    const user = await User.findOne({ clerkId }).populate({
+      path: "favoris",
+      select: "-bailleur -tauxCommission -noteInterne",
+    });
+    if (!user) return res.json({ favoris: [] });
+    res.json({ favoris: user.favoris ?? [] });
+  } catch (error) {
+    res.status(500).json({ message: "Erreur serveur" });
+  }
+};
+
+// ── Favoris : toggle ─────────────────────────────────────
 export const toggleFavori = async (req, res) => {
   try {
     const clerkId = req.auth.userId;
@@ -104,7 +121,7 @@ export const toggleFavori = async (req, res) => {
     let user = await User.findOne({ clerkId });
     if (!user) return res.status(404).json({ message: "Utilisateur non trouvé" });
 
-    const isFavori = user.favoris.includes(bienId);
+    const isFavori = user.favoris.map(String).includes(bienId);
     if (isFavori) {
       user.favoris = user.favoris.filter((id) => id.toString() !== bienId);
     } else {
@@ -134,17 +151,24 @@ export const getMesDemandes = async (req, res) => {
 // ── Sync user Clerk → MongoDB ────────────────────────────
 export const syncUser = async (req, res) => {
   try {
-    const { userId, firstName, lastName, emailAddresses, imageUrl } = req.body;
-    let user = await User.findOne({ clerkId: userId });
+    const clerkId = req.auth.userId;
+    const { firstName, lastName, emailAddresses, imageUrl } = req.body;
+
+    let user = await User.findOne({ clerkId });
     if (!user) {
       user = new User({
-        clerkId: userId,
-        nom: `${firstName} ${lastName}`,
+        clerkId,
+        nom: `${firstName ?? ""} ${lastName ?? ""}`.trim() || "Utilisateur",
         email: emailAddresses?.[0]?.emailAddress || "",
         imageUrl: imageUrl || "",
       });
-      await user.save();
+    } else {
+      // Mettre à jour les infos si elles ont changé
+      user.nom = `${firstName ?? ""} ${lastName ?? ""}`.trim() || user.nom;
+      user.email = emailAddresses?.[0]?.emailAddress || user.email;
+      user.imageUrl = imageUrl || user.imageUrl;
     }
+    await user.save();
     res.json(user);
   } catch (error) {
     res.status(500).json({ message: "Erreur serveur" });

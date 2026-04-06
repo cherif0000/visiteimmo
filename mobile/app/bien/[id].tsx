@@ -4,7 +4,7 @@ import {
 } from "react-native";
 import { useState } from "react";
 import { useLocalSearchParams, router } from "expo-router";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import { bienApi, demandeApi, userApi } from "@/lib/api";
@@ -26,10 +26,11 @@ function formatPrix(p: number) {
 export default function BienDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useUser();
+  const qc = useQueryClient();
   const [photoIndex, setPhotoIndex] = useState(0);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
-    nom: user ? `${user.firstName} ${user.lastName}` : "",
+    nom: user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() : "",
     telephone: "",
     email: user?.emailAddresses?.[0]?.emailAddress ?? "",
     typeDemande: "visite" as "visite" | "reservation",
@@ -40,6 +41,22 @@ export default function BienDetailScreen() {
     queryKey: ["bien", id],
     queryFn: () => bienApi.getById(id!),
     enabled: !!id,
+  });
+
+  // Favoris
+  const { data: favorisData } = useQuery({
+    queryKey: ["favoris"],
+    queryFn: userApi.getFavoris,
+    enabled: !!user,
+  });
+  const favorisIds: string[] = (favorisData?.favoris ?? []).map((b: any) =>
+    typeof b === "string" ? b : b._id
+  );
+  const isFavori = id ? favorisIds.includes(id) : false;
+
+  const toggleFavMut = useMutation({
+    mutationFn: () => userApi.toggleFavori(id!),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["favoris"] }),
   });
 
   const demandeMut = useMutation({
@@ -115,18 +132,38 @@ export default function BienDetailScreen() {
             <Ionicons name="arrow-back" size={20} color="#fff" />
           </TouchableOpacity>
 
+          {/* Favori button */}
+          <TouchableOpacity
+            className="absolute top-4 right-4 w-10 h-10 rounded-full items-center justify-center"
+            style={{ backgroundColor: "rgba(0,0,0,0.5)" }}
+            onPress={() => toggleFavMut.mutate()}
+            disabled={toggleFavMut.isPending}
+          >
+            <Ionicons
+              name={isFavori ? "heart" : "heart-outline"}
+              size={20}
+              color={isFavori ? "#EF4444" : "#fff"}
+            />
+          </TouchableOpacity>
+
           {/* Photo dots */}
           {bien.photos?.length > 1 && (
             <View className="absolute bottom-3 w-full flex-row justify-center gap-1">
               {bien.photos.map((_: any, i: number) => (
-                <View key={i} className="rounded-full" style={{ width: i === photoIndex ? 18 : 6, height: 6, backgroundColor: i === photoIndex ? GOLD : "rgba(255,255,255,0.5)" }} />
+                <View key={i} className="rounded-full" style={{
+                  width: i === photoIndex ? 18 : 6,
+                  height: 6,
+                  backgroundColor: i === photoIndex ? GOLD : "rgba(255,255,255,0.5)"
+                }} />
               ))}
             </View>
           )}
 
           {/* Statut badge */}
-          <View className="absolute top-4 right-4 px-3 py-1.5 rounded-full"
-            style={{ backgroundColor: STATUT_COLORS[bien.statut] + "EE" }}>
+          <View
+            className="absolute bottom-4 left-4 px-3 py-1.5 rounded-full"
+            style={{ backgroundColor: STATUT_COLORS[bien.statut] + "EE" }}
+          >
             <Text className="text-white text-xs font-bold">{STATUT_LABELS[bien.statut]}</Text>
           </View>
         </View>
@@ -153,7 +190,10 @@ export default function BienDetailScreen() {
 
           {/* Prix */}
           <View className="bg-surface rounded-2xl p-4 mb-4">
-            <Text className="text-amber-400 text-3xl font-bold">{formatPrix(bien.prix)}<Text className="text-text-secondary text-base font-normal"> /mois</Text></Text>
+            <Text className="text-amber-400 text-3xl font-bold">
+              {formatPrix(bien.prix)}
+              <Text className="text-text-secondary text-base font-normal"> /mois</Text>
+            </Text>
             {bien.caution > 0 && <Text className="text-text-secondary text-sm mt-1">Caution : {formatPrix(bien.caution)}</Text>}
             {bien.chargesIncluses && <Text className="text-green-400 text-sm mt-0.5">✓ Charges incluses</Text>}
           </View>
@@ -180,7 +220,7 @@ export default function BienDetailScreen() {
           </View>
 
           {/* Formulaire de demande */}
-          {showForm ? (
+          {showForm && (
             <View className="bg-surface rounded-2xl p-4 mb-4">
               <Text className="text-text-primary font-bold text-base mb-4">Demande de visite</Text>
 
@@ -189,10 +229,15 @@ export default function BienDetailScreen() {
                 {(["visite", "reservation"] as const).map((t) => (
                   <TouchableOpacity
                     key={t} onPress={() => setForm((f) => ({ ...f, typeDemande: t }))}
-                    className={`flex-1 py-2.5 rounded-xl items-center border`}
-                    style={{ backgroundColor: form.typeDemande === t ? GOLD : "transparent", borderColor: form.typeDemande === t ? GOLD : "#1A3C5E" }}
+                    className="flex-1 py-2.5 rounded-xl items-center border"
+                    style={{
+                      backgroundColor: form.typeDemande === t ? GOLD : "transparent",
+                      borderColor: form.typeDemande === t ? GOLD : "#1A3C5E",
+                    }}
                   >
-                    <Text className="font-semibold capitalize" style={{ color: form.typeDemande === t ? "#0F2236" : "#8DA3B5" }}>{t}</Text>
+                    <Text className="font-semibold capitalize" style={{ color: form.typeDemande === t ? "#0F2236" : "#8DA3B5" }}>
+                      {t}
+                    </Text>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -226,7 +271,10 @@ export default function BienDetailScreen() {
               />
 
               <View className="flex-row gap-3">
-                <TouchableOpacity className="flex-1 py-3 rounded-xl border border-surface/50 items-center" onPress={() => setShowForm(false)}>
+                <TouchableOpacity
+                  className="flex-1 py-3 rounded-xl border border-surface/50 items-center"
+                  onPress={() => setShowForm(false)}
+                >
                   <Text className="text-text-secondary font-semibold">Annuler</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -242,14 +290,16 @@ export default function BienDetailScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          ) : null}
+          )}
         </View>
       </ScrollView>
 
       {/* CTA flottant */}
       {!showForm && bien.statut !== "loue" && (
-        <View className="absolute bottom-0 left-0 right-0 px-5 pb-8 pt-3"
-          style={{ backgroundColor: "rgba(15,34,54,0.95)" }}>
+        <View
+          className="absolute bottom-0 left-0 right-0 px-5 pb-8 pt-3"
+          style={{ backgroundColor: "rgba(15,34,54,0.95)" }}
+        >
           <TouchableOpacity
             className="w-full py-4 rounded-2xl items-center"
             style={{ backgroundColor: GOLD }}
@@ -262,8 +312,10 @@ export default function BienDetailScreen() {
         </View>
       )}
       {!showForm && bien.statut === "loue" && (
-        <View className="absolute bottom-0 left-0 right-0 px-5 pb-8 pt-3"
-          style={{ backgroundColor: "rgba(15,34,54,0.95)" }}>
+        <View
+          className="absolute bottom-0 left-0 right-0 px-5 pb-8 pt-3"
+          style={{ backgroundColor: "rgba(15,34,54,0.95)" }}
+        >
           <View className="w-full py-4 rounded-2xl items-center bg-surface/50">
             <Text className="text-text-secondary font-bold">Ce bien n'est plus disponible</Text>
           </View>

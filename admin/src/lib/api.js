@@ -50,30 +50,22 @@ export const demandeApi = {
   },
 };
 
-// ─── Courtiers ───────────────────────────────────────────
-export const courtierApi = {
+// ─── Bailleurs (anciennement "courtiers" - nom corrigé) ──
+export const bailleurApi = {
   getAll: async () => {
-    const { data } = await axiosInstance.get("/admin/courtiers");
-    return data;
-  },
-  getOne: async (id) => {
-    const { data } = await axiosInstance.get(`/admin/courtiers/${id}`);
+    const { data } = await axiosInstance.get("/admin/bailleurs");
     return data;
   },
   create: async (body) => {
-    const { data } = await axiosInstance.post("/admin/courtiers", body);
+    const { data } = await axiosInstance.post("/admin/bailleurs", body);
     return data;
   },
   update: async ({ id, body }) => {
-    const { data } = await axiosInstance.put(`/admin/courtiers/${id}`, body);
+    const { data } = await axiosInstance.put(`/admin/bailleurs/${id}`, body);
     return data;
   },
   delete: async (id) => {
-    const { data } = await axiosInstance.delete(`/admin/courtiers/${id}`);
-    return data;
-  },
-  getBiens: async (id) => {
-    const { data } = await axiosInstance.get(`/admin/courtiers/${id}/biens`);
+    const { data } = await axiosInstance.delete(`/admin/bailleurs/${id}`);
     return data;
   },
 };
