@@ -5,66 +5,67 @@ import { Commission } from "../models/commission.model.js";
 import { User } from "../models/user.model.js";
 import cloudinary from "../config/cloudinary.js";
 
-// ─────────────────────────────────────────────────────────
-// STATS DASHBOARD
-// ─────────────────────────────────────────────────────────
+// ── STATS DASHBOARD ──────────────────────────────────────
 export const getDashboardStats = async (req, res) => {
   try {
     const now = new Date();
     const debutMois = new Date(now.getFullYear(), now.getMonth(), 1);
-    const debutJour = new Date(now.setHours(0, 0, 0, 0));
 
     const [
-      totalBiens,
-      biensDisponibles,
-      totalDemandes,
-      demandesAujourdhui,
-      demandesNouvelles,
-      totalClients,
-      totalBailleurs,
-      commissionsData,
-      demandesParStatut,
+      totalBiens, biensDisponibles, biensLoues, biensSurDemande,
+      biensVerifies, biensPropres, biensViaBailleurs,
+      totalDemandes, demandesNouvelles, demandesEnCours, demandesConfirmees, demandesConcluess, demandesAnnulees,
+      totalClients, totalBailleurs,
+      commissionsData, commissionsMoisData,
       recentesDemandes,
     ] = await Promise.all([
       Bien.countDocuments(),
       Bien.countDocuments({ statut: "disponible" }),
+      Bien.countDocuments({ statut: "loue" }),
+      Bien.countDocuments({ statut: "sur_demande" }),
+      Bien.countDocuments({ verifie: true }),
+      Bien.countDocuments({ bailleur: null }),
+      Bien.countDocuments({ bailleur: { $ne: null } }),
       Demande.countDocuments(),
-      Demande.countDocuments({ createdAt: { $gte: debutJour } }),
       Demande.countDocuments({ statut: "nouveau" }),
+      Demande.countDocuments({ statut: "en_cours" }),
+      Demande.countDocuments({ statut: "confirme" }),
+      Demande.countDocuments({ statut: "conclu" }),
+      Demande.countDocuments({ statut: "annule" }),
       User.countDocuments(),
       Bailleur.countDocuments({ actif: true }),
       Commission.aggregate([
-        { $match: { mois: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}` } },
         { $group: { _id: null, total: { $sum: "$montant" }, count: { $sum: 1 } } },
       ]),
-      Demande.aggregate([
-        { $group: { _id: "$statut", count: { $sum: 1 } } },
+      Commission.aggregate([
+        { $match: { createdAt: { $gte: debutMois } } },
+        { $group: { _id: null, total: { $sum: "$montant" }, count: { $sum: 1 } } },
       ]),
-      Demande.find({ statut: "nouveau" })
+      Demande.find({ statut: { $in: ["nouveau", "en_cours"] } })
         .sort({ createdAt: -1 })
-        .limit(5)
+        .limit(8)
         .populate("bien", "titre quartier prix photos"),
     ]);
 
-    const revenuMois = commissionsData[0]?.total ?? 0;
-    const locationsMois = commissionsData[0]?.count ?? 0;
-
-    // Taux de conversion : conclu / total
-    const conclues = demandesParStatut.find((d) => d._id === "conclu")?.count ?? 0;
-    const tauxConversion = totalDemandes > 0 ? Math.round((conclues / totalDemandes) * 100) : 0;
+    const totalCommissions = commissionsData[0]?.total ?? 0;
+    const commissionsTotal = commissionsData[0]?.count ?? 0;
+    const commissionsMois = commissionsMoisData[0]?.total ?? 0;
+    const locationsMois = commissionsMoisData[0]?.count ?? 0;
+    const tauxConversion = totalDemandes > 0 ? Math.round((demandesConcluess / totalDemandes) * 100) : 0;
 
     res.json({
-      totalBiens,
-      biensDisponibles,
-      totalDemandes,
-      demandesAujourdhui,
-      demandesNouvelles,
-      totalClients,
-      totalBailleurs,
-      revenuMois,
-      locationsMois,
+      // Biens
+      totalBiens, biensDisponibles, biensLoues, biensSurDemande,
+      biensVerifies, biensPropres, biensViaBailleurs,
+      // Demandes
+      totalDemandes, demandesNouvelles, demandesEnCours, demandesConfirmees,
+      demandesConclues: demandesConcluess, demandesAnnulees,
+      // Personnes
+      totalClients, totalBailleurs,
+      // Finances
+      totalCommissions, commissionsTotal, commissionsMois, locationsMois,
       tauxConversion,
-      demandesParStatut,
+      // Recent
       recentesDemandes,
     });
   } catch (error) {
@@ -73,9 +74,7 @@ export const getDashboardStats = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────
-// BIENS
-// ─────────────────────────────────────────────────────────
+// ── BIENS ────────────────────────────────────────────────
 export const getAllBiens = async (req, res) => {
   try {
     const { statut, type, quartier, verifie, bailleur } = req.query;
@@ -87,7 +86,7 @@ export const getAllBiens = async (req, res) => {
     if (bailleur) filtre.bailleur = bailleur;
 
     const biens = await Bien.find(filtre)
-      .populate("bailleur", "nom telephone tauxCommission")
+      .populate("bailleur", "nom telephone tauxCommission type")
       .sort({ createdAt: -1 });
     res.json(biens);
   } catch (error) {
@@ -99,12 +98,11 @@ export const createBien = async (req, res) => {
   try {
     const {
       titre, description, type, prix, caution, chargesIncluses, meuble,
-      chambres, surface, quartier, adresse, ville, coordonnees,
-      bailleur, tauxCommission, statut,
+      chambres, surface, quartier, adresse, ville,
+      bailleur, tauxCommission, statut, enVedette,
     } = req.body;
 
     let photos = [];
-    // Upload photos si présentes
     if (req.files && req.files.length > 0) {
       const uploads = await Promise.all(
         req.files.map((f) =>
@@ -118,16 +116,17 @@ export const createBien = async (req, res) => {
     }
 
     const bien = new Bien({
-      titre, description, type, prix: Number(prix),
+      titre, description, type,
+      prix: Number(prix),
       caution: Number(caution) || 0,
       chargesIncluses: chargesIncluses === "true",
       meuble: meuble === "true",
       chambres: Number(chambres) || 1,
-      surface: Number(surface) || null,
+      surface: surface ? Number(surface) : null,
       quartier, adresse,
       ville: ville || "Dakar",
-      coordonnees: coordonnees ? JSON.parse(coordonnees) : {},
       photos,
+      enVedette: enVedette === "true",
       bailleur: bailleur || null,
       tauxCommission: tauxCommission ? Number(tauxCommission) : null,
       statut: statut || "disponible",
@@ -135,7 +134,6 @@ export const createBien = async (req, res) => {
 
     await bien.save();
 
-    // Mettre à jour le compteur du bailleur
     if (bailleur) {
       await Bailleur.findByIdAndUpdate(bailleur, { $inc: { totalBiens: 1 } });
     }
@@ -143,7 +141,7 @@ export const createBien = async (req, res) => {
     res.status(201).json(bien);
   } catch (error) {
     console.error("createBien error:", error);
-    res.status(500).json({ message: "Erreur lors de la création" });
+    res.status(500).json({ message: "Erreur lors de la création : " + error.message });
   }
 };
 
@@ -179,9 +177,7 @@ export const toggleVerifie = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────
-// DEMANDES
-// ─────────────────────────────────────────────────────────
+// ── DEMANDES ─────────────────────────────────────────────
 export const getAllDemandes = async (req, res) => {
   try {
     const { statut, bien, search } = req.query;
@@ -194,11 +190,9 @@ export const getAllDemandes = async (req, res) => {
         { "client.telephone": new RegExp(search, "i") },
       ];
     }
-
     const demandes = await Demande.find(filtre)
       .populate("bien", "titre quartier prix photos type")
       .sort({ createdAt: -1 });
-
     res.json(demandes);
   } catch (error) {
     res.status(500).json({ message: "Erreur serveur" });
@@ -209,7 +203,6 @@ export const updateStatutDemande = async (req, res) => {
   try {
     const { statut, heureConfirmee, noteInterne, motifAnnulation } = req.body;
     const demande = await Demande.findById(req.params.id).populate("bien");
-
     if (!demande) return res.status(404).json({ message: "Demande non trouvée" });
 
     demande.statut = statut;
@@ -217,7 +210,7 @@ export const updateStatutDemande = async (req, res) => {
     if (noteInterne !== undefined) demande.noteInterne = noteInterne;
     if (motifAnnulation) demande.motifAnnulation = motifAnnulation;
 
-    // Si conclu → créer la commission automatiquement
+    // Si conclu → créer la commission
     if (statut === "conclu" && !demande.commission) {
       const bien = demande.bien;
       const taux = bien.tauxCommission ?? 100;
@@ -230,19 +223,15 @@ export const updateStatutDemande = async (req, res) => {
         demande: demande._id,
         bien: bien._id,
         bailleur: bien.bailleur || null,
-        loyer,
-        taux,
-        montant,
+        loyer, taux, montant,
         type: bien.type === "hotel" ? "reservation_hotel" : "location",
         mois,
       });
       await commission.save();
       demande.commission = commission._id;
 
-      // Mettre à jour statut du bien
       await Bien.findByIdAndUpdate(bien._id, { statut: "loue" });
 
-      // Stats bailleur
       if (bien.bailleur) {
         await Bailleur.findByIdAndUpdate(bien.bailleur, {
           $inc: { totalLocations: 1, totalCommissions: montant },
@@ -267,9 +256,7 @@ export const deleteDemande = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────
-// BAILLEURS
-// ─────────────────────────────────────────────────────────
+// ── BAILLEURS ────────────────────────────────────────────
 export const getAllBailleurs = async (req, res) => {
   try {
     const bailleurs = await Bailleur.find().sort({ createdAt: -1 });
@@ -285,7 +272,7 @@ export const createBailleur = async (req, res) => {
     await bailleur.save();
     res.status(201).json(bailleur);
   } catch (error) {
-    res.status(500).json({ message: "Erreur serveur" });
+    res.status(500).json({ message: "Erreur serveur : " + error.message });
   }
 };
 
@@ -308,9 +295,7 @@ export const deleteBailleur = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────
-// COMMISSIONS
-// ─────────────────────────────────────────────────────────
+// ── COMMISSIONS ──────────────────────────────────────────
 export const getAllCommissions = async (req, res) => {
   try {
     const { mois, bailleur } = req.query;
@@ -319,23 +304,22 @@ export const getAllCommissions = async (req, res) => {
     if (bailleur) filtre.bailleur = bailleur;
 
     const commissions = await Commission.find(filtre)
-      .populate("bien", "titre quartier type")
+      .populate("bien", "titre quartier type prix")
       .populate("bailleur", "nom telephone")
       .populate({ path: "demande", populate: { path: "bien", select: "titre" } })
       .sort({ createdAt: -1 });
 
-    // Total
     const total = commissions.reduce((sum, c) => sum + c.montant, 0);
+    const totalLoyers = commissions.reduce((sum, c) => sum + c.loyer, 0);
+    const resteAVerser = totalLoyers - total;
 
-    res.json({ commissions, total });
+    res.json({ commissions, total, totalLoyers, resteAVerser });
   } catch (error) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
 
-// ─────────────────────────────────────────────────────────
-// CLIENTS
-// ─────────────────────────────────────────────────────────
+// ── CLIENTS ──────────────────────────────────────────────
 export const getAllClients = async (req, res) => {
   try {
     const clients = await User.find().sort({ createdAt: -1 });
