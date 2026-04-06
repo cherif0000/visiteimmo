@@ -1,0 +1,17 @@
+{
+  "expo": {
+    "name": "VisiteImmobilier",
+    "slug": "visiteimmo-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "visiteimmo",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
