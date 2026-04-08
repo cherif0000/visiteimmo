@@ -5,107 +5,181 @@ import { router } from "expo-router";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 
-const GOLD = "#D4A843";
-const NAVY = "#0F2236";
+// ── Vue non connecté ──────────────────────────────────────
+function GuestProfile() {
+  return (
+    <View className="flex-1 items-center justify-center px-8">
+      {/* Avatar placeholder */}
+      <View className="w-20 h-20 rounded-full items-center justify-center mb-5"
+        style={{ backgroundColor: "#F0F0EC", borderWidth: 2, borderColor: "#E5E5E0" }}>
+        <Ionicons name="person-outline" size={36} color="#9AA0AA" />
+      </View>
 
-const MENU_ITEMS = [
-  { id: 1, icon: "heart",               title: "Biens favoris",     color: "#EF4444", action: "/(tabs)/favoris"  },
-  { id: 2, icon: "document-text",       title: "Mes demandes",      color: "#10B981", action: "/(tabs)/demandes" },
-  { id: 3, icon: "notifications",       title: "Notifications",     color: "#8B5CF6", action: null               },
-  { id: 4, icon: "help-circle",         title: "Aide & FAQ",        color: "#F59E0B", action: null               },
+      <Text className="text-text-primary text-xl font-extrabold text-center mb-1">
+        Bienvenue
+      </Text>
+      <Text className="text-text-secondary text-sm text-center leading-5 mb-8">
+        Connectez-vous pour accéder à vos favoris, suivre vos demandes de visite et gérer votre profil.
+      </Text>
+
+      <TouchableOpacity
+        className="w-full py-4 rounded-2xl items-center mb-3"
+        style={{ backgroundColor: "#1A1A2E" }}
+        onPress={() => router.push("/(auth)")}
+      >
+        <Text className="text-white font-bold text-base">Se connecter</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        className="w-full py-4 rounded-2xl items-center"
+        style={{ borderWidth: 1.5, borderColor: "#E5E5E0" }}
+        onPress={() => router.push("/(auth)")}
+      >
+        <Text className="text-text-primary font-semibold text-base">Créer un compte</Text>
+      </TouchableOpacity>
+
+      <Text className="text-text-muted text-xs text-center mt-8 leading-5 px-4">
+        En vous connectant, vous acceptez nos{" "}
+        <Text className="text-text-secondary font-medium">Conditions d'utilisation</Text>
+        {" "}et notre{" "}
+        <Text className="text-text-secondary font-medium">Politique de confidentialité</Text>.
+      </Text>
+    </View>
+  );
+}
+
+// ── Vue connecté ──────────────────────────────────────────
+const MENU = [
+  { id: 1, icon: "heart-outline",         title: "Mes favoris",    sub: "Biens sauvegardés",        action: "/(tabs)/favoris"  },
+  { id: 2, icon: "document-text-outline", title: "Mes demandes",   sub: "Visites & réservations",   action: "/(tabs)/demandes" },
+  { id: 3, icon: "notifications-outline", title: "Notifications",  sub: "Alertes et mises à jour",  action: null               },
+  { id: 4, icon: "help-circle-outline",   title: "Aide & Support", sub: "FAQ et contact",           action: null               },
 ] as const;
 
-export default function ProfileScreen() {
+function ConnectedProfile() {
   const { signOut } = useAuth();
-  const { user } = useUser();
+  const { user }    = useUser();
+
+  return (
+    <ScrollView
+      className="flex-1"
+      showsVerticalScrollIndicator={false}
+      contentContainerStyle={{ paddingBottom: 100 }}
+    >
+      {/* Header profil */}
+      <View className="px-5 pt-6 pb-5">
+        <Text className="text-text-primary text-2xl font-extrabold mb-4">Mon profil</Text>
+
+        <View className="bg-surface rounded-2xl p-5"
+          style={{ borderWidth: 1, borderColor: "#E5E5E0" }}>
+          <View className="flex-row items-center gap-4">
+            <View className="relative">
+              {user?.imageUrl ? (
+                <Image
+                  source={user.imageUrl}
+                  style={{ width: 64, height: 64, borderRadius: 32 }}
+                  transition={200}
+                />
+              ) : (
+                <View className="w-16 h-16 rounded-full items-center justify-center"
+                  style={{ backgroundColor: "#F0F0EC" }}>
+                  <Ionicons name="person" size={28} color="#5C6472" />
+                </View>
+              )}
+              {/* Badge actif */}
+              <View className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full items-center justify-center"
+                style={{ backgroundColor: "#16A34A", borderWidth: 2, borderColor: "#fff" }}>
+                <View className="w-2 h-2 rounded-full bg-white" />
+              </View>
+            </View>
+            <View className="flex-1">
+              <Text className="text-text-primary text-lg font-extrabold">
+                {user?.firstName} {user?.lastName}
+              </Text>
+              <Text className="text-text-secondary text-sm mt-0.5">
+                {user?.emailAddresses?.[0]?.emailAddress}
+              </Text>
+              <View className="flex-row items-center gap-1.5 mt-1.5">
+                <View className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: "#16A34A" }} />
+                <Text className="text-xs font-medium" style={{ color: "#16A34A" }}>Compte actif</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+      </View>
+
+      {/* Menu */}
+      <View className="px-5">
+        <View className="bg-surface rounded-2xl overflow-hidden mb-4"
+          style={{ borderWidth: 1, borderColor: "#E5E5E0" }}>
+          {MENU.map((item, index) => (
+            <TouchableOpacity
+              key={item.id}
+              className="flex-row items-center gap-4 px-4 py-4"
+              style={{
+                borderBottomWidth: index < MENU.length - 1 ? 1 : 0,
+                borderBottomColor: "#F0F0EC",
+              }}
+              activeOpacity={0.7}
+              onPress={() => item.action && router.push(item.action as any)}
+            >
+              <View className="w-10 h-10 rounded-full items-center justify-center"
+                style={{ backgroundColor: "#F0F0EC" }}>
+                <Ionicons name={item.icon as any} size={20} color="#1A1A2E" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-text-primary font-semibold text-sm">{item.title}</Text>
+                <Text className="text-text-muted text-xs mt-0.5">{item.sub}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#9AA0AA" />
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* À propos */}
+        <View className="bg-surface rounded-2xl p-4 mb-4"
+          style={{ borderWidth: 1, borderColor: "#E5E5E0" }}>
+          <View className="flex-row items-center gap-3">
+            <View className="w-10 h-10 rounded-full items-center justify-center"
+              style={{ backgroundColor: "#F0F0EC" }}>
+              <Ionicons name="information-circle-outline" size={20} color="#1A1A2E" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-text-primary font-semibold text-sm">VisiteImmobilier</Text>
+              <Text className="text-text-muted text-xs mt-0.5">La plateforme de confiance à Dakar</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color="#9AA0AA" />
+          </View>
+        </View>
+
+        {/* Déconnexion */}
+        <TouchableOpacity
+          className="flex-row items-center justify-center py-4 rounded-2xl mb-2"
+          style={{ borderWidth: 1.5, borderColor: "#FCA5A5", backgroundColor: "#FEF2F2" }}
+          activeOpacity={0.8}
+          onPress={() => signOut()}
+        >
+          <Ionicons name="log-out-outline" size={18} color="#DC2626" />
+          <Text className="font-bold text-sm ml-2" style={{ color: "#DC2626" }}>Se déconnecter</Text>
+        </TouchableOpacity>
+
+        <Text className="text-center text-text-muted text-xs mt-3">
+          VisiteImmobilier v1.0 • Dakar, Sénégal
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+// ── Export principal ──────────────────────────────────────
+export default function ProfileScreen() {
+  const { isSignedIn, isLoaded } = useAuth();
+
+  if (!isLoaded) return null;
 
   return (
     <SafeScreen>
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 120 }}>
-
-        {/* Header */}
-        <View className="px-5 pt-6 pb-4">
-          <Text className="text-text-primary text-2xl font-bold mb-4">Mon profil</Text>
-
-          <View className="bg-surface rounded-3xl p-5">
-            <View className="flex-row items-center gap-4">
-              <View className="relative">
-                <Image
-                  source={user?.imageUrl}
-                  style={{ width: 72, height: 72, borderRadius: 36 }}
-                  transition={200}
-                />
-                <View className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full items-center justify-center border-2 border-surface"
-                  style={{ backgroundColor: GOLD }}>
-                  <Ionicons name="checkmark" size={13} color={NAVY} />
-                </View>
-              </View>
-              <View className="flex-1">
-                <Text className="text-text-primary text-xl font-bold">{user?.firstName} {user?.lastName}</Text>
-                <Text className="text-text-secondary text-sm mt-0.5">{user?.emailAddresses?.[0]?.emailAddress}</Text>
-                <View className="flex-row items-center gap-1 mt-1.5">
-                  <View className="w-2 h-2 rounded-full bg-green-400" />
-                  <Text className="text-green-400 text-xs font-medium">Compte actif</Text>
-                </View>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        {/* Menu items */}
-        <View className="px-5">
-          <View className="flex-row flex-wrap gap-3 mb-4">
-            {MENU_ITEMS.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                className="bg-surface rounded-2xl p-5 items-center justify-center"
-                style={{ width: "47.5%" }}
-                activeOpacity={0.7}
-                onPress={() => item.action && router.push(item.action as any)}
-              >
-                <View
-                  className="rounded-full w-14 h-14 items-center justify-center mb-3"
-                  style={{ backgroundColor: item.color + "20" }}
-                >
-                  <Ionicons name={item.icon as any} size={26} color={item.color} />
-                </View>
-                <Text className="text-text-primary font-bold text-sm text-center">{item.title}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* A propos */}
-          <View className="bg-surface rounded-2xl p-4 mb-3">
-            <View className="flex-row items-center gap-3 py-2">
-              <View className="w-9 h-9 rounded-full items-center justify-center" style={{ backgroundColor: GOLD + "20" }}>
-                <Ionicons name="information-circle" size={20} color={GOLD} />
-              </View>
-              <View className="flex-1">
-                <Text className="text-text-primary font-semibold">À propos de VisiteImmobilier</Text>
-                <Text className="text-text-secondary text-xs mt-0.5">La plateforme de confiance à Dakar</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#4A6580" />
-            </View>
-          </View>
-
-          {/* Déconnexion */}
-          <TouchableOpacity
-            className="bg-surface rounded-2xl py-4 flex-row items-center justify-center border-2 mb-3"
-            style={{ borderColor: "#EF444430" }}
-            activeOpacity={0.8}
-            onPress={() => signOut()}
-          >
-            <Ionicons name="log-out-outline" size={20} color="#EF4444" />
-            <Text className="text-red-500 font-bold text-base ml-2">Se déconnecter</Text>
-          </TouchableOpacity>
-
-          {/* App version */}
-          <Text className="text-center text-text-secondary text-xs opacity-40 mt-2">
-            VisiteImmobilier v1.0 • Dakar, Sénégal
-          </Text>
-        </View>
-
-      </ScrollView>
+      {isSignedIn ? <ConnectedProfile /> : <GuestProfile />}
     </SafeScreen>
   );
 }

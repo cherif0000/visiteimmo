@@ -20,7 +20,6 @@ const tokenCache = {
 const queryClient = new QueryClient();
 const publishableKey = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!;
 
-// Injecteur de token + sync user MongoDB
 function AuthSetup() {
   const { getToken, isSignedIn } = useAuth();
   const { user } = useUser();
@@ -30,13 +29,9 @@ function AuthSetup() {
       setAuthToken(null);
       return;
     }
-
     (async () => {
-      // 1. Injecter le token dans axios
       const token = await getToken();
       setAuthToken(token);
-
-      // 2. Sync l'utilisateur vers MongoDB (crée ou met à jour)
       try {
         await userApi.sync({
           firstName: user.firstName,
@@ -44,9 +39,7 @@ function AuthSetup() {
           emailAddresses: user.emailAddresses,
           imageUrl: user.imageUrl,
         });
-      } catch (e) {
-        // Non bloquant
-      }
+      } catch {}
     })();
   }, [isSignedIn, user?.id]);
 
@@ -59,6 +52,7 @@ export default function RootLayout() {
       <ClerkLoaded>
         <QueryClientProvider client={queryClient}>
           <AuthSetup />
+          {/* Pas de redirection forcée — les guests peuvent naviguer */}
           <Stack screenOptions={{ headerShown: false }} />
         </QueryClientProvider>
       </ClerkLoaded>

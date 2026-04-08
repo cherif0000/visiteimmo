@@ -5,6 +5,27 @@ import { Commission } from "../models/commission.model.js";
 import { User } from "../models/user.model.js";
 import cloudinary from "../config/cloudinary.js";
 
+// ── Helpers ──────────────────────────────────────────────
+
+// Crée un bailleur s'il n'existe pas encore (matching par nom exact, insensible à la casse)
+async function findOrCreateBailleur({ nomBailleur, telephoneBailleur, emailBailleur, tauxCommission }) {
+  if (!nomBailleur?.trim()) return null;
+
+  const existing = await Bailleur.findOne({
+    nom: { $regex: new RegExp(`^${nomBailleur.trim()}$`, "i") },
+  });
+  if (existing) return existing;
+
+  const nouveau = new Bailleur({
+    nom: nomBailleur.trim(),
+    telephone: telephoneBailleur || "",
+    email: emailBailleur || "",
+    tauxCommission: tauxCommission ? Number(tauxCommission) : 10,
+  });
+  await nouveau.save();
+  return nouveau;
+}
+
 // ── STATS DASHBOARD ──────────────────────────────────────
 export const getDashboardStats = async (req, res) => {
   try {
@@ -14,7 +35,8 @@ export const getDashboardStats = async (req, res) => {
     const [
       totalBiens, biensDisponibles, biensLoues, biensSurDemande,
       biensVerifies, biensPropres, biensViaBailleurs,
-      totalDemandes, demandesNouvelles, demandesEnCours, demandesConfirmees, demandesConcluess, demandesAnnulees,
+      totalDemandes, demandesNouvelles, demandesEnCours,
+      demandesConfirmees, demandesConclues, demandesAnnulees,
       totalClients, totalBailleurs,
       commissionsData, commissionsMoisData,
       recentesDemandes,
@@ -44,32 +66,27 @@ export const getDashboardStats = async (req, res) => {
       Demande.find({ statut: { $in: ["nouveau", "en_cours"] } })
         .sort({ createdAt: -1 })
         .limit(8)
-        .populate("bien", "titre quartier prix photos"),
+        .populate("bien", "titre quartier prix"),
     ]);
 
-    const totalCommissions = commissionsData[0]?.total ?? 0;
-    const commissionsTotal = commissionsData[0]?.count ?? 0;
-    const commissionsMois = commissionsMoisData[0]?.total ?? 0;
-    const locationsMois = commissionsMoisData[0]?.count ?? 0;
-    const tauxConversion = totalDemandes > 0 ? Math.round((demandesConcluess / totalDemandes) * 100) : 0;
+    const tauxConversion = totalDemandes > 0
+      ? Math.round((demandesConclues / totalDemandes) * 100) : 0;
 
     res.json({
-      // Biens
       totalBiens, biensDisponibles, biensLoues, biensSurDemande,
       biensVerifies, biensPropres, biensViaBailleurs,
-      // Demandes
-      totalDemandes, demandesNouvelles, demandesEnCours, demandesConfirmees,
-      demandesConclues: demandesConcluess, demandesAnnulees,
-      // Personnes
+      totalDemandes, demandesNouvelles, demandesEnCours,
+      demandesConfirmees, demandesConclues, demandesAnnulees,
       totalClients, totalBailleurs,
-      // Finances
-      totalCommissions, commissionsTotal, commissionsMois, locationsMois,
+      totalCommissions:  commissionsData[0]?.total ?? 0,
+      commissionsTotal:  commissionsData[0]?.count ?? 0,
+      commissionsMois:   commissionsMoisData[0]?.total ?? 0,
+      locationsMois:     commissionsMoisData[0]?.count ?? 0,
       tauxConversion,
-      // Recent
       recentesDemandes,
     });
-  } catch (error) {
-    console.error("getDashboardStats error:", error);
+  } catch (err) {
+    console.error("getDashboardStats:", err);
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -79,17 +96,17 @@ export const getAllBiens = async (req, res) => {
   try {
     const { statut, type, quartier, verifie, bailleur } = req.query;
     const filtre = {};
-    if (statut) filtre.statut = statut;
-    if (type) filtre.type = type;
+    if (statut)  filtre.statut  = statut;
+    if (type)    filtre.type    = type;
     if (quartier) filtre.quartier = new RegExp(quartier, "i");
     if (verifie !== undefined) filtre.verifie = verifie === "true";
     if (bailleur) filtre.bailleur = bailleur;
 
     const biens = await Bien.find(filtre)
-      .populate("bailleur", "nom telephone tauxCommission type")
-      .sort({ createdAt: -1 });
+      .populate("bailleur", "nom telephone email tauxCommission type")
+      .sort({ enVedette: -1, createdAt: -1 });
     res.json(biens);
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -97,13 +114,19 @@ export const getAllBiens = async (req, res) => {
 export const createBien = async (req, res) => {
   try {
     const {
-      titre, description, type, prix, caution, chargesIncluses, meuble,
-      chambres, surface, quartier, adresse, ville,
-      bailleur, tauxCommission, statut, enVedette,
+      titre, description, type, statut,
+      prix, caution, chargesIncluses, meuble, chambres, surface,
+      quartier, adresse, ville, etage, numeroBien,
+      enVedette,
+      // Bailleur : soit ID existant, soit infos pour création auto
+      bailleurId,
+      nomBailleur, telephoneBailleur, emailBailleur,
+      tauxCommission,
     } = req.body;
 
+    // ── Upload photos ────────────────────────────────────
     let photos = [];
-    if (req.files && req.files.length > 0) {
+    if (req.files?.length > 0) {
       const uploads = await Promise.all(
         req.files.map((f) =>
           cloudinary.uploader.upload(f.path, {
@@ -115,42 +138,84 @@ export const createBien = async (req, res) => {
       photos = uploads.map((u) => u.secure_url);
     }
 
+    // ── Résolution bailleur (auto-création si besoin) ────
+    let bailleurDoc = null;
+    if (bailleurId) {
+      bailleurDoc = await Bailleur.findById(bailleurId);
+    } else if (nomBailleur?.trim()) {
+      bailleurDoc = await findOrCreateBailleur({
+        nomBailleur, telephoneBailleur, emailBailleur, tauxCommission,
+      });
+    }
+
+    // ── Création du bien ─────────────────────────────────
     const bien = new Bien({
       titre, description, type,
-      prix: Number(prix),
+      statut: statut || "disponible",
+      prix:    Number(prix),
       caution: Number(caution) || 0,
       chargesIncluses: chargesIncluses === "true",
-      meuble: meuble === "true",
+      meuble:          meuble === "true",
       chambres: Number(chambres) || 1,
-      surface: surface ? Number(surface) : null,
+      surface:  surface ? Number(surface) : null,
       quartier, adresse,
-      ville: ville || "Dakar",
+      ville:       ville || "Dakar",
+      etage:       etage !== undefined && etage !== "" ? Number(etage) : null,
+      numeroBien:  numeroBien || "",
       photos,
-      enVedette: enVedette === "true",
-      bailleur: bailleur || null,
-      tauxCommission: tauxCommission ? Number(tauxCommission) : null,
-      statut: statut || "disponible",
+      enVedette:      enVedette === "true",
+      bailleur:       bailleurDoc?._id ?? null,
+      tauxCommission: bailleurDoc
+        ? (tauxCommission ? Number(tauxCommission) : bailleurDoc.tauxCommission)
+        : null,
     });
 
     await bien.save();
 
-    if (bailleur) {
-      await Bailleur.findByIdAndUpdate(bailleur, { $inc: { totalBiens: 1 } });
+    // ── Incrémenter compteur bailleur ────────────────────
+    if (bailleurDoc) {
+      await Bailleur.findByIdAndUpdate(bailleurDoc._id, { $inc: { totalBiens: 1 } });
     }
 
-    res.status(201).json(bien);
-  } catch (error) {
-    console.error("createBien error:", error);
-    res.status(500).json({ message: "Erreur lors de la création : " + error.message });
+    const populated = await bien.populate("bailleur", "nom telephone");
+    res.status(201).json(populated);
+  } catch (err) {
+    console.error("createBien:", err);
+    res.status(500).json({ message: "Erreur création : " + err.message });
   }
 };
 
 export const updateBien = async (req, res) => {
   try {
-    const bien = await Bien.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    // Si modification du bailleur par nom
+    if (req.body.nomBailleur?.trim() && !req.body.bailleurId) {
+      const bailleurDoc = await findOrCreateBailleur({
+        nomBailleur:      req.body.nomBailleur,
+        telephoneBailleur: req.body.telephoneBailleur,
+        emailBailleur:    req.body.emailBailleur,
+        tauxCommission:   req.body.tauxCommission,
+      });
+      req.body.bailleur = bailleurDoc?._id ?? null;
+    } else if (req.body.bailleurId) {
+      req.body.bailleur = req.body.bailleurId;
+    }
+
+    // Convertir les champs numériques
+    if (req.body.etage !== undefined)
+      req.body.etage = req.body.etage !== "" ? Number(req.body.etage) : null;
+    if (req.body.prix)    req.body.prix    = Number(req.body.prix);
+    if (req.body.caution) req.body.caution = Number(req.body.caution);
+    if (req.body.chambres) req.body.chambres = Number(req.body.chambres);
+    if (req.body.surface) req.body.surface = Number(req.body.surface);
+    if (req.body.chargesIncluses !== undefined) req.body.chargesIncluses = req.body.chargesIncluses === "true";
+    if (req.body.meuble !== undefined) req.body.meuble = req.body.meuble === "true";
+    if (req.body.enVedette !== undefined) req.body.enVedette = req.body.enVedette === "true";
+
+    const bien = await Bien.findByIdAndUpdate(req.params.id, req.body, { new: true })
+      .populate("bailleur", "nom telephone");
     if (!bien) return res.status(404).json({ message: "Bien non trouvé" });
     res.json(bien);
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -159,8 +224,11 @@ export const deleteBien = async (req, res) => {
   try {
     const bien = await Bien.findByIdAndDelete(req.params.id);
     if (!bien) return res.status(404).json({ message: "Bien non trouvé" });
+    if (bien.bailleur) {
+      await Bailleur.findByIdAndUpdate(bien.bailleur, { $inc: { totalBiens: -1 } });
+    }
     res.json({ message: "Bien supprimé" });
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -172,7 +240,7 @@ export const toggleVerifie = async (req, res) => {
     bien.verifie = !bien.verifie;
     await bien.save();
     res.json(bien);
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -183,18 +251,18 @@ export const getAllDemandes = async (req, res) => {
     const { statut, bien, search } = req.query;
     const filtre = {};
     if (statut) filtre.statut = statut;
-    if (bien) filtre.bien = bien;
+    if (bien)   filtre.bien   = bien;
     if (search) {
       filtre.$or = [
-        { "client.nom": new RegExp(search, "i") },
+        { "client.nom":       new RegExp(search, "i") },
         { "client.telephone": new RegExp(search, "i") },
       ];
     }
     const demandes = await Demande.find(filtre)
-      .populate("bien", "titre quartier prix photos type")
+      .populate("bien", "titre quartier prix photos type etage numeroBien adresse")
       .sort({ createdAt: -1 });
     res.json(demandes);
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -210,18 +278,17 @@ export const updateStatutDemande = async (req, res) => {
     if (noteInterne !== undefined) demande.noteInterne = noteInterne;
     if (motifAnnulation) demande.motifAnnulation = motifAnnulation;
 
-    // Si conclu → créer la commission
+    // Si conclu → créer commission automatiquement
     if (statut === "conclu" && !demande.commission) {
       const bien = demande.bien;
-      const taux = bien.tauxCommission ?? 100;
-      const loyer = bien.prix;
+      const taux   = bien.tauxCommission ?? 100;
+      const loyer  = bien.prix;
       const montant = Math.round((loyer * taux) / 100);
-      const now = new Date();
-      const mois = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const mois = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
 
       const commission = new Commission({
         demande: demande._id,
-        bien: bien._id,
+        bien:    bien._id,
         bailleur: bien.bailleur || null,
         loyer, taux, montant,
         type: bien.type === "hotel" ? "reservation_hotel" : "location",
@@ -231,7 +298,6 @@ export const updateStatutDemande = async (req, res) => {
       demande.commission = commission._id;
 
       await Bien.findByIdAndUpdate(bien._id, { statut: "loue" });
-
       if (bien.bailleur) {
         await Bailleur.findByIdAndUpdate(bien.bailleur, {
           $inc: { totalLocations: 1, totalCommissions: montant },
@@ -241,8 +307,8 @@ export const updateStatutDemande = async (req, res) => {
 
     await demande.save();
     res.json(demande);
-  } catch (error) {
-    console.error("updateStatutDemande error:", error);
+  } catch (err) {
+    console.error("updateStatutDemande:", err);
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -251,7 +317,7 @@ export const deleteDemande = async (req, res) => {
   try {
     await Demande.findByIdAndDelete(req.params.id);
     res.json({ message: "Demande supprimée" });
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -259,9 +325,9 @@ export const deleteDemande = async (req, res) => {
 // ── BAILLEURS ────────────────────────────────────────────
 export const getAllBailleurs = async (req, res) => {
   try {
-    const bailleurs = await Bailleur.find().sort({ createdAt: -1 });
+    const bailleurs = await Bailleur.find().sort({ nom: 1 });
     res.json(bailleurs);
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -271,8 +337,8 @@ export const createBailleur = async (req, res) => {
     const bailleur = new Bailleur(req.body);
     await bailleur.save();
     res.status(201).json(bailleur);
-  } catch (error) {
-    res.status(500).json({ message: "Erreur serveur : " + error.message });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
   }
 };
 
@@ -281,7 +347,7 @@ export const updateBailleur = async (req, res) => {
     const bailleur = await Bailleur.findByIdAndUpdate(req.params.id, req.body, { new: true });
     if (!bailleur) return res.status(404).json({ message: "Bailleur non trouvé" });
     res.json(bailleur);
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -290,7 +356,7 @@ export const deleteBailleur = async (req, res) => {
   try {
     await Bailleur.findByIdAndDelete(req.params.id);
     res.json({ message: "Bailleur supprimé" });
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -300,21 +366,20 @@ export const getAllCommissions = async (req, res) => {
   try {
     const { mois, bailleur } = req.query;
     const filtre = {};
-    if (mois) filtre.mois = mois;
+    if (mois)    filtre.mois    = mois;
     if (bailleur) filtre.bailleur = bailleur;
 
     const commissions = await Commission.find(filtre)
-      .populate("bien", "titre quartier type prix")
-      .populate("bailleur", "nom telephone")
-      .populate({ path: "demande", populate: { path: "bien", select: "titre" } })
+      .populate("bien",    "titre quartier type prix")
+      .populate("bailleur","nom telephone")
       .sort({ createdAt: -1 });
 
-    const total = commissions.reduce((sum, c) => sum + c.montant, 0);
-    const totalLoyers = commissions.reduce((sum, c) => sum + c.loyer, 0);
+    const total        = commissions.reduce((s, c) => s + c.montant, 0);
+    const totalLoyers  = commissions.reduce((s, c) => s + c.loyer,   0);
     const resteAVerser = totalLoyers - total;
 
     res.json({ commissions, total, totalLoyers, resteAVerser });
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -324,7 +389,7 @@ export const getAllClients = async (req, res) => {
   try {
     const clients = await User.find().sort({ createdAt: -1 });
     res.json(clients);
-  } catch (error) {
+  } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
   }
 };

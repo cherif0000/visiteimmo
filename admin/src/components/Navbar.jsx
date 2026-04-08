@@ -1,17 +1,16 @@
 import { UserButton } from "@clerk/clerk-react";
 import { matchPath, useLocation } from "react-router";
 import {
-  HomeIcon, BuildingIcon, ClipboardListIcon, UsersIcon,
-  UserIcon, CoinsIcon, PanelLeftIcon, MessageSquareIcon,
+  HomeIcon, BuildingIcon, ClipboardListIcon,
+  UsersIcon, CoinsIcon, PanelLeftIcon,
 } from "lucide-react";
 
 export const NAVIGATION = [
-  { name: "Dashboard",   path: "/dashboard",   icon: <HomeIcon className="size-5" /> },
-  { name: "Biens",       path: "/biens",        icon: <BuildingIcon className="size-5" /> },
-  { name: "Messages",    path: "/demandes",     icon: <MessageSquareIcon className="size-5" /> },
-  { name: "Bailleurs",   path: "/bailleurs",    icon: <UserIcon className="size-5" /> },
-  { name: "Commissions", path: "/commissions",  icon: <CoinsIcon className="size-5" /> },
-  { name: "Clients",     path: "/clients",      icon: <UsersIcon className="size-5" /> },
+  { name: "Tableau de bord", path: "/dashboard",   icon: <HomeIcon className="size-5" /> },
+  { name: "Biens",           path: "/biens",        icon: <BuildingIcon className="size-5" /> },
+  { name: "Demandes",        path: "/demandes",     icon: <ClipboardListIcon className="size-5" /> },
+  { name: "Commissions",     path: "/commissions",  icon: <CoinsIcon className="size-5" /> },
+  { name: "Clients",         path: "/clients",      icon: <UsersIcon className="size-5" /> },
 ];
 
 export function Navbar() {
@@ -19,7 +18,6 @@ export function Navbar() {
   const current = NAVIGATION.find((item) =>
     matchPath({ path: item.path, end: false }, location.pathname)
   );
-
   return (
     <div className="navbar w-full bg-base-300 border-b border-base-content/10">
       <label htmlFor="my-drawer" className="btn btn-square btn-ghost" aria-label="toggle sidebar">

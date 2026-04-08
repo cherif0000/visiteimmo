@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { bailleurApi } from "../lib/api";
-import { PlusIcon, PencilIcon, TrashIcon, UserIcon, PhoneIcon, MailIcon, CoinsIcon } from "lucide-react";
+import { PlusIcon, PencilIcon, TrashIcon, UserIcon, PhoneIcon, MailIcon, CoinsIcon, KeyIcon } from "lucide-react";
 
 const TYPES = [
   { value: "particulier", label: "Particulier" },
@@ -11,14 +11,14 @@ const TYPES = [
 
 function BailleurForm({ bailleur, onSubmit, onClose, isLoading }) {
   const [form, setForm] = useState({
-    nom:             bailleur?.nom ?? "",
-    telephone:       bailleur?.telephone ?? "",
-    email:           bailleur?.email ?? "",
-    type:            bailleur?.type ?? "particulier",
-    adresse:         bailleur?.adresse ?? "",
-    tauxCommission:  bailleur?.tauxCommission ?? "100",
-    contrat:         bailleur?.contrat ?? "",
-    noteInterne:     bailleur?.noteInterne ?? "",
+    nom:            bailleur?.nom ?? "",
+    telephone:      bailleur?.telephone ?? "",
+    email:          bailleur?.email ?? "",
+    type:           bailleur?.type ?? "particulier",
+    adresse:        bailleur?.adresse ?? "",
+    tauxCommission: bailleur?.tauxCommission ?? "100",
+    noteInterne:    bailleur?.noteInterne ?? "",
+    clerkId:        bailleur?.clerkId ?? "",
   });
   const handle = (e) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
@@ -30,8 +30,8 @@ function BailleurForm({ bailleur, onSubmit, onClose, isLoading }) {
           <button className="btn btn-ghost btn-sm btn-circle" onClick={onClose}>✕</button>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); onSubmit(form); }} className="p-5 space-y-3">
-
           <div className="grid grid-cols-2 gap-3">
+
             <div className="form-control col-span-2">
               <label className="label"><span className="label-text">Nom complet *</span></label>
               <input name="nom" required className="input input-bordered" value={form.nom} onChange={handle} placeholder="Mamadou Diallo" />
@@ -65,11 +65,36 @@ function BailleurForm({ bailleur, onSubmit, onClose, isLoading }) {
               <input name="adresse" className="input input-bordered" value={form.adresse} onChange={handle} />
             </div>
 
+            {/* ── Accès portail bailleur ─────────────────── */}
+            <div className="form-control col-span-2">
+              <div className="alert alert-info text-sm py-2 px-3 mb-1">
+                <KeyIcon className="size-4 shrink-0" />
+                <span>Si ce bailleur doit avoir accès à son portail en ligne, renseignez son Clerk ID ci-dessous.</span>
+              </div>
+              <label className="label">
+                <span className="label-text font-semibold">Clerk ID (accès portail bailleur)</span>
+                <span className="label-text-alt text-base-content/50">Optionnel</span>
+              </label>
+              <input
+                name="clerkId"
+                className="input input-bordered font-mono text-sm"
+                value={form.clerkId}
+                onChange={handle}
+                placeholder="user_2xxxxxxxxxxxxxxxxxx"
+              />
+              <label className="label">
+                <span className="label-text-alt text-base-content/40">
+                  Obtenir sur <strong>dashboard.clerk.com</strong> → Users → cliquer sur l'utilisateur → copier son ID
+                </span>
+              </label>
+            </div>
+
             <div className="form-control col-span-2">
               <label className="label"><span className="label-text">Note interne</span></label>
               <textarea name="noteInterne" rows={2} className="textarea textarea-bordered"
                 value={form.noteInterne} onChange={handle} placeholder="Informations importantes sur ce bailleur..." />
             </div>
+
           </div>
 
           <div className="flex justify-end gap-2 pt-2 border-t border-base-content/10">
@@ -120,6 +145,19 @@ export default function BailleursPage() {
         </button>
       </div>
 
+      {/* Explication portail */}
+      <div className="alert bg-base-200 border border-base-content/10 text-sm">
+        <KeyIcon className="size-5 shrink-0 text-primary" />
+        <div>
+          <p className="font-semibold">Portail bailleur</p>
+          <p className="text-base-content/60">
+            Chaque bailleur peut avoir accès à un espace personnel pour suivre ses biens et revenus.
+            Pour l'activer : cliquez <strong>Modifier</strong> → renseignez son <strong>Clerk ID</strong>.
+            Il se connectera sur la même URL que le dashboard et sera redirigé automatiquement vers son espace.
+          </p>
+        </div>
+      </div>
+
       {isLoading ? (
         <div className="flex justify-center py-20"><span className="loading loading-spinner loading-lg text-primary" /></div>
       ) : bailleurs.length === 0 ? (
@@ -143,8 +181,17 @@ export default function BailleursPage() {
                       <span className="badge badge-ghost badge-xs capitalize">{b.type}</span>
                     </div>
                   </div>
-                  <div className={`badge badge-sm ${b.actif ? "badge-success" : "badge-error"}`}>
-                    {b.actif ? "Actif" : "Inactif"}
+                  <div className="flex flex-col items-end gap-1">
+                    <div className={`badge badge-sm ${b.actif ? "badge-success" : "badge-error"}`}>
+                      {b.actif ? "Actif" : "Inactif"}
+                    </div>
+                    {b.clerkId ? (
+                      <div className="badge badge-info badge-xs gap-1">
+                        <KeyIcon className="size-2.5" /> Portail actif
+                      </div>
+                    ) : (
+                      <div className="badge badge-ghost badge-xs opacity-50">Pas de portail</div>
+                    )}
                   </div>
                 </div>
 
@@ -164,7 +211,6 @@ export default function BailleursPage() {
                   </div>
                 </div>
 
-                {/* Stats */}
                 <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-base-content/10 text-center text-xs">
                   <div>
                     <p className="font-bold text-base">{b.totalBiens}</p>
