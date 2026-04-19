@@ -3,7 +3,7 @@ import { Demande } from "../models/demande.model.js";
 import { Bailleur } from "../models/bailleur.model.js";
 import { Commission } from "../models/commission.model.js";
 import { User } from "../models/user.model.js";
-import cloudinary from "../config/cloudinary.js";
+import { uploadPhoto } from "../config/cloudinary.js";
 
 // ── Helpers ──────────────────────────────────────────────
 
@@ -124,18 +124,11 @@ export const createBien = async (req, res) => {
       tauxCommission,
     } = req.body;
 
-    // ── Upload photos ────────────────────────────────────
+    // ── Upload photos (Cloudinary optionnel) ────────────
     let photos = [];
     if (req.files?.length > 0) {
-      const uploads = await Promise.all(
-        req.files.map((f) =>
-          cloudinary.uploader.upload(f.path, {
-            folder: "visiteimmo/biens",
-            transformation: [{ width: 1200, height: 800, crop: "fill", quality: "auto" }],
-          })
-        )
-      );
-      photos = uploads.map((u) => u.secure_url);
+      const results = await Promise.all(req.files.map((f) => uploadPhoto(f.path)));
+      photos = results.filter(Boolean).map((u) => u.secure_url);
     }
 
     // ── Résolution bailleur (auto-création si besoin) ────
