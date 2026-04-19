@@ -297,12 +297,22 @@ export default function BiensPage() {
   const createMut = useMutation({
     mutationFn: bienApi.create,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["biens"] }); setModal(null); },
-    onError: (err) => alert("Erreur : " + (err?.response?.data?.message ?? err.message)),
+    onError: (err) => {
+      const status = err?.response?.status ?? "?";
+      const msg = err?.response?.data?.message ?? err.message;
+      alert(`Erreur ${status} : ${msg}`);
+      console.error("createBien error:", err?.response?.data ?? err);
+    },
   });
   const updateMut = useMutation({
     mutationFn: bienApi.update,
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["biens"] }); setModal(null); },
-    onError: (err) => alert("Erreur : " + (err?.response?.data?.message ?? err.message)),
+    onError: (err) => {
+      const status = err?.response?.status ?? "?";
+      const msg = err?.response?.data?.message ?? err.message;
+      alert(`Erreur ${status} : ${msg}`);
+      console.error("updateBien error:", err?.response?.data ?? err);
+    },
   });
   const deleteMut = useMutation({
     mutationFn: bienApi.delete,

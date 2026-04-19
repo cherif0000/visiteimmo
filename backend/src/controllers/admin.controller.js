@@ -1,13 +1,13 @@
-import { Bien } from "../models/bien.model.js";
-import { Demande } from "../models/demande.model.js";
-import { Bailleur } from "../models/bailleur.model.js";
+import fs   from "fs";
+import { Bien }       from "../models/bien.model.js";
+import { Demande }    from "../models/demande.model.js";
+import { Bailleur }   from "../models/bailleur.model.js";
 import { Commission } from "../models/commission.model.js";
-import { User } from "../models/user.model.js";
-import { uploadPhoto } from "../config/cloudinary.js";
+import { User }       from "../models/user.model.js";
+import { uploadPhoto, deletePhotos } from "../config/cloudinary.js";
 
 // ── Helpers ──────────────────────────────────────────────
 
-// Crée un bailleur s'il n'existe pas encore (matching par nom exact, insensible à la casse)
 async function findOrCreateBailleur({ nomBailleur, telephoneBailleur, emailBailleur, tauxCommission }) {
   if (!nomBailleur?.trim()) return null;
 
@@ -24,6 +24,18 @@ async function findOrCreateBailleur({ nomBailleur, telephoneBailleur, emailBaill
   });
   await nouveau.save();
   return nouveau;
+}
+
+// Supprime les fichiers temporaires laissés par multer après upload.
+// Sans ça, chaque upload laisse un fichier orphelin dans /uploads.
+function cleanupTempFiles(files = []) {
+  for (const f of files) {
+    try {
+      if (f.path && fs.existsSync(f.path)) fs.unlinkSync(f.path);
+    } catch {
+      // Ne pas bloquer si la suppression échoue
+    }
+  }
 }
 
 // ── STATS DASHBOARD ──────────────────────────────────────
@@ -96,8 +108,8 @@ export const getAllBiens = async (req, res) => {
   try {
     const { statut, type, quartier, verifie, bailleur } = req.query;
     const filtre = {};
-    if (statut)  filtre.statut  = statut;
-    if (type)    filtre.type    = type;
+    if (statut)   filtre.statut   = statut;
+    if (type)     filtre.type     = type;
     if (quartier) filtre.quartier = new RegExp(quartier, "i");
     if (verifie !== undefined) filtre.verifie = verifie === "true";
     if (bailleur) filtre.bailleur = bailleur;
@@ -118,20 +130,21 @@ export const createBien = async (req, res) => {
       prix, caution, chargesIncluses, meuble, chambres, surface,
       quartier, adresse, ville, etage, numeroBien,
       enVedette,
-      // Bailleur : soit ID existant, soit infos pour création auto
       bailleurId,
       nomBailleur, telephoneBailleur, emailBailleur,
       tauxCommission,
     } = req.body;
 
-    // ── Upload photos (Cloudinary optionnel) ────────────
+    // ── Upload photos → Cloudinary ───────────────────────
     let photos = [];
     if (req.files?.length > 0) {
       const results = await Promise.all(req.files.map((f) => uploadPhoto(f.path)));
       photos = results.filter(Boolean).map((u) => u.secure_url);
+      // Nettoyage des fichiers temporaires multer après upload réussi
+      cleanupTempFiles(req.files);
     }
 
-    // ── Résolution bailleur (auto-création si besoin) ────
+    // ── Résolution bailleur ──────────────────────────────
     let bailleurDoc = null;
     if (bailleurId) {
       bailleurDoc = await Bailleur.findById(bailleurId);
@@ -141,7 +154,6 @@ export const createBien = async (req, res) => {
       });
     }
 
-    // ── Création du bien ─────────────────────────────────
     const bien = new Bien({
       titre, description, type,
       statut: statut || "disponible",
@@ -165,7 +177,6 @@ export const createBien = async (req, res) => {
 
     await bien.save();
 
-    // ── Incrémenter compteur bailleur ────────────────────
     if (bailleurDoc) {
       await Bailleur.findByIdAndUpdate(bailleurDoc._id, { $inc: { totalBiens: 1 } });
     }
@@ -173,42 +184,52 @@ export const createBien = async (req, res) => {
     const populated = await bien.populate("bailleur", "nom telephone");
     res.status(201).json(populated);
   } catch (err) {
+    // Nettoyage des fichiers temporaires même en cas d'erreur
+    cleanupTempFiles(req.files ?? []);
     console.error("createBien:", err);
-    res.status(500).json({ message: "Erreur création : " + err.message });
+    res.status(500).json({ message: "Erreur création : " + err.message, details: err.errors ?? null });
   }
 };
 
 export const updateBien = async (req, res) => {
   try {
-    // Si modification du bailleur par nom
     if (req.body.nomBailleur?.trim() && !req.body.bailleurId) {
       const bailleurDoc = await findOrCreateBailleur({
-        nomBailleur:      req.body.nomBailleur,
+        nomBailleur:       req.body.nomBailleur,
         telephoneBailleur: req.body.telephoneBailleur,
-        emailBailleur:    req.body.emailBailleur,
-        tauxCommission:   req.body.tauxCommission,
+        emailBailleur:     req.body.emailBailleur,
+        tauxCommission:    req.body.tauxCommission,
       });
       req.body.bailleur = bailleurDoc?._id ?? null;
     } else if (req.body.bailleurId) {
       req.body.bailleur = req.body.bailleurId;
     }
 
-    // Convertir les champs numériques
     if (req.body.etage !== undefined)
       req.body.etage = req.body.etage !== "" ? Number(req.body.etage) : null;
-    if (req.body.prix)    req.body.prix    = Number(req.body.prix);
-    if (req.body.caution) req.body.caution = Number(req.body.caution);
+    if (req.body.prix)     req.body.prix     = Number(req.body.prix);
+    if (req.body.caution)  req.body.caution  = Number(req.body.caution);
     if (req.body.chambres) req.body.chambres = Number(req.body.chambres);
-    if (req.body.surface) req.body.surface = Number(req.body.surface);
+    if (req.body.surface)  req.body.surface  = Number(req.body.surface);
     if (req.body.chargesIncluses !== undefined) req.body.chargesIncluses = req.body.chargesIncluses === "true";
-    if (req.body.meuble !== undefined) req.body.meuble = req.body.meuble === "true";
-    if (req.body.enVedette !== undefined) req.body.enVedette = req.body.enVedette === "true";
+    if (req.body.meuble      !== undefined) req.body.meuble      = req.body.meuble      === "true";
+    if (req.body.enVedette   !== undefined) req.body.enVedette   = req.body.enVedette   === "true";
+
+    // Upload nouvelles photos si fournies
+    if (req.files?.length > 0) {
+      const results = await Promise.all(req.files.map((f) => uploadPhoto(f.path)));
+      const newPhotos = results.filter(Boolean).map((u) => u.secure_url);
+      cleanupTempFiles(req.files);
+      // Ajoute aux photos existantes (ne remplace pas)
+      req.body.photos = [...(req.body.existingPhotos ? JSON.parse(req.body.existingPhotos) : []), ...newPhotos];
+    }
 
     const bien = await Bien.findByIdAndUpdate(req.params.id, req.body, { new: true })
       .populate("bailleur", "nom telephone");
     if (!bien) return res.status(404).json({ message: "Bien non trouvé" });
     res.json(bien);
   } catch (err) {
+    cleanupTempFiles(req.files ?? []);
     res.status(500).json({ message: "Erreur serveur" });
   }
 };
@@ -217,9 +238,20 @@ export const deleteBien = async (req, res) => {
   try {
     const bien = await Bien.findByIdAndDelete(req.params.id);
     if (!bien) return res.status(404).json({ message: "Bien non trouvé" });
+
+    // ── Nettoyage Cloudinary ─────────────────────────────
+    // Bug corrigé : l'ancien code supprimait le bien en base mais laissait
+    // les photos orphelines sur Cloudinary → fuite de stockage permanente.
+    // deletePhotos() extrait les public_ids depuis les URLs et les supprime
+    // en une seule requête API Cloudinary (max 100 par appel).
+    if (bien.photos?.length > 0) {
+      await deletePhotos(bien.photos);
+    }
+
     if (bien.bailleur) {
       await Bailleur.findByIdAndUpdate(bien.bailleur, { $inc: { totalBiens: -1 } });
     }
+
     res.json({ message: "Bien supprimé" });
   } catch (err) {
     res.status(500).json({ message: "Erreur serveur" });
@@ -271,13 +303,12 @@ export const updateStatutDemande = async (req, res) => {
     if (noteInterne !== undefined) demande.noteInterne = noteInterne;
     if (motifAnnulation) demande.motifAnnulation = motifAnnulation;
 
-    // Si conclu → créer commission automatiquement
     if (statut === "conclu" && !demande.commission) {
-      const bien = demande.bien;
-      const taux   = bien.tauxCommission ?? 100;
-      const loyer  = bien.prix;
+      const bien    = demande.bien;
+      const taux    = bien.tauxCommission ?? 100;
+      const loyer   = bien.prix;
       const montant = Math.round((loyer * taux) / 100);
-      const mois = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+      const mois    = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
 
       const commission = new Commission({
         demande: demande._id,
@@ -359,12 +390,12 @@ export const getAllCommissions = async (req, res) => {
   try {
     const { mois, bailleur } = req.query;
     const filtre = {};
-    if (mois)    filtre.mois    = mois;
+    if (mois)     filtre.mois     = mois;
     if (bailleur) filtre.bailleur = bailleur;
 
     const commissions = await Commission.find(filtre)
-      .populate("bien",    "titre quartier type prix")
-      .populate("bailleur","nom telephone")
+      .populate("bien",     "titre quartier type prix")
+      .populate("bailleur", "nom telephone")
       .sort({ createdAt: -1 });
 
     const total        = commissions.reduce((s, c) => s + c.montant, 0);

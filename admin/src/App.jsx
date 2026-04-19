@@ -20,25 +20,48 @@ import axiosInstance from "./lib/axios";
 function useRole() {
   const { isSignedIn, getToken } = useAuth();
   const { user } = useUser();
-  const [role, setRole]     = useState(null);
+  const [role, setRole]       = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isSignedIn || !user) { setLoading(false); return; }
+    if (!isSignedIn || !user) {
+      setLoading(false);
+      return;
+    }
 
     getToken().then(async (token) => {
       setAdminToken(token);
-      const adminEmail = import.meta.env.VITE_ADMIN_EMAIL;
-      const userEmail  = user.emailAddresses?.[0]?.emailAddress;
 
-      if (adminEmail && userEmail === adminEmail) {
-        setRole("admin"); setLoading(false); return;
+      const adminEmail = import.meta.env.VITE_ADMIN_EMAIL?.trim();
+      const userEmail  = user.emailAddresses?.[0]?.emailAddress?.trim();
+
+      // Si VITE_ADMIN_EMAIL n'est pas configuré → admin par défaut
+      if (!adminEmail) {
+        console.warn("⚠️ VITE_ADMIN_EMAIL non défini dans .env → accès admin par défaut");
+        setRole("admin");
+        setLoading(false);
+        return;
       }
+
+      // Email correspond → admin
+      if (userEmail === adminEmail) {
+        setRole("admin");
+        setLoading(false);
+        return;
+      }
+
+      // Sinon : vérifier si c'est un bailleur enregistré
       try {
-        await axiosInstance.get("/admin/bailleur-portal/stats");
-        setRole("bailleur");
+        const res = await axiosInstance.get("/admin/bailleur-portal/stats");
+        if (res.data?.bailleur) {
+          setRole("bailleur");
+        } else {
+          // Pas de profil bailleur lié → refuser l'accès
+          setRole("unauthorized");
+        }
       } catch {
-        setRole("admin"); // fallback
+        // Erreur API → refuser l'accès
+        setRole("unauthorized");
       }
       setLoading(false);
     });
@@ -53,22 +76,43 @@ export default function App() {
 
   if (!isLoaded || loading) return <PageLoader />;
 
-  if (!isSignedIn) return <Routes><Route path="*" element={<LoginPage />} /></Routes>;
+  if (!isSignedIn) {
+    return <Routes><Route path="*" element={<LoginPage />} /></Routes>;
+  }
 
+  // Accès non autorisé (ni admin ni bailleur reconnu)
+  if (role === "unauthorized") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-base-200">
+        <div className="card bg-base-100 shadow-xl p-8 max-w-sm text-center">
+          <h2 className="text-xl font-bold mb-2">Accès refusé</h2>
+          <p className="text-base-content/60 text-sm mb-4">
+            Votre compte n'est pas autorisé à accéder à cette interface.
+          </p>
+          <button className="btn btn-primary btn-sm" onClick={() => window.location.reload()}>
+            Réessayer
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Portail Bailleur
   if (role === "bailleur") {
     return (
       <Routes>
         <Route path="/bailleur" element={<BailleurPortalLayout />}>
           <Route index element={<BailleurDashboard />} />
-          <Route path="biens"        element={<BailleurBiens />} />
-          <Route path="demandes"     element={<BailleurDemandes />} />
-          <Route path="commissions"  element={<BailleurCommissions />} />
+          <Route path="biens"       element={<BailleurBiens />} />
+          <Route path="demandes"    element={<BailleurDemandes />} />
+          <Route path="commissions" element={<BailleurCommissions />} />
         </Route>
         <Route path="*" element={<Navigate to="/bailleur" />} />
       </Routes>
     );
   }
 
+  // Dashboard Admin
   return (
     <Routes>
       <Route path="/" element={<DashboardLayout />}>

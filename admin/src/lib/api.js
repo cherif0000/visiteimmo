@@ -15,9 +15,7 @@ export const bienApi = {
     return data;
   },
   create: async (formData) => {
-    const { data } = await axiosInstance.post("/admin/biens", formData, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    const { data } = await axiosInstance.post("/admin/biens", formData);
     return data;
   },
   update: async ({ id, body }) => {

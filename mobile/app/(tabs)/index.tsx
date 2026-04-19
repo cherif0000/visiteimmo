@@ -308,12 +308,20 @@ export default function HomeScreen() {
               <Text className="text-text-secondary mt-3 text-sm">Chargement…</Text>
             </View>
           ) : isError ? (
-            <View className="items-center justify-center py-20">
-              <Ionicons name="wifi-outline" size={48} color="#9AA0AA" />
-              <Text className="text-text-primary font-bold mt-3">Erreur de connexion</Text>
-              <Text className="text-text-secondary text-sm mt-1 text-center">
-                Vérifie ta connexion internet et réessaie.
+            <View className="items-center justify-center py-20 px-6">
+              <View className="w-16 h-16 rounded-full items-center justify-center mb-4"
+                style={{ backgroundColor: "#FEF2F2" }}>
+                <Ionicons name="wifi-outline" size={30} color="#DC2626" />
+              </View>
+              <Text className="text-text-primary font-bold text-lg text-center">Impossible de charger les biens</Text>
+              <Text className="text-text-secondary text-sm mt-2 text-center leading-5">
+                Le serveur est inaccessible. Vérifie que le backend tourne et que ton téléphone est sur le même réseau WiFi que ton PC.
               </Text>
+              <View className="mt-4 px-4 py-3 rounded-xl w-full" style={{ backgroundColor: "#F0F0EC" }}>
+                <Text className="text-text-muted text-xs text-center font-mono">
+                  {process.env.EXPO_PUBLIC_API_URL ?? "http://localhost:5000/api"}
+                </Text>
+              </View>
             </View>
           ) : biens.length === 0 ? (
             <View className="items-center justify-center py-20">

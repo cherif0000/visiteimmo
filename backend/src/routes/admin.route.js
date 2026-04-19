@@ -1,5 +1,5 @@
 import express from "express";
-import { requireAuth } from "@clerk/express";
+import { getAuth } from "@clerk/express";
 import multer from "multer";
 import {
   getDashboardStats,
@@ -19,7 +19,19 @@ import {
 const router = express.Router();
 const upload = multer({ dest: "uploads/" });
 
-router.use(requireAuth());
+// ── Auth guard ───────────────────────────────────────────
+// ⚠️  requireAuth() de @clerk/express v1.x peut émettre un redirect 302 → "/"
+//     sur les requêtes POST/PUT non authentifiées, ce qui produit l'erreur
+//     "Cannot GET /" côté client. On utilise getAuth() directement pour
+//     toujours renvoyer un JSON 401 propre sans aucune redirection.
+router.use((req, res, next) => {
+  const auth = getAuth(req);
+  if (!auth?.userId) {
+    return res.status(401).json({ message: "Non autorisé — connexion requise" });
+  }
+  req.auth = auth;
+  next();
+});
 
 // ── Stats admin ──────────────────────────────────────────
 router.get("/stats", getDashboardStats);
@@ -27,7 +39,7 @@ router.get("/stats", getDashboardStats);
 // ── Biens ────────────────────────────────────────────────
 router.get("/biens", getAllBiens);
 router.post("/biens", upload.array("photos", 10), createBien);
-router.put("/biens/:id", updateBien);
+router.put("/biens/:id", upload.array("photos", 10), updateBien);
 router.delete("/biens/:id", deleteBien);
 router.patch("/biens/:id/verifie", toggleVerifie);
 

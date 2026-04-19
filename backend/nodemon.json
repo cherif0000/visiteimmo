@@ -1,5 +1,7 @@
 {
   "watch": ["src"],
   "ext": "js,mjs,json",
-  "ignore": ["uploads/"]
+  "ignore": ["uploads/"],
+  "delay": 500,
+  "signal": "SIGTERM"
 }
